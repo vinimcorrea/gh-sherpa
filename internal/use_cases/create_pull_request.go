@@ -36,6 +36,8 @@ type CreatePullRequestConfiguration struct {
 	IsInteractive   bool
 	CloseIssue      bool
 	TemplatePath    string
+	BranchType      string
+	SkipDescription bool
 }
 
 type CreatePullRequest struct {

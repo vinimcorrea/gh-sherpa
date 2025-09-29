@@ -24,12 +24,28 @@ func (b BranchProvider) GetBranchName(issue domain.Issue, repo domain.Repository
 
 	issueTrackerType := issue.TrackerType()
 
-	if b.cfg.IsInteractive {
+	// Check if branch type is overridden via command line flag
+	if b.cfg.BranchTypeOverride != "" {
+		branchType = b.cfg.BranchTypeOverride
+	} else if b.cfg.IsInteractive {
 		branchType, err = b.getBranchType(issueType, issueTrackerType)
 		if err != nil {
 			return "", err
 		}
+	} else {
+		// remap bug to bugfix
+		if issueType == issue_types.Bug {
+			branchType = b.getBugFixBranchType()
+			issueType = issue_types.Bugfix
+		}
 
+		if !issueType.Valid() || issueType == issue_types.Other || issueType == issue_types.Unknown {
+			return "", ErrUndeterminedIssueType
+		}
+	}
+
+	// Handle description prompt only if not skipped and interactive mode is on
+	if b.cfg.IsInteractive && !b.cfg.SkipDescription && b.cfg.BranchTypeOverride == "" {
 		truncatePrompt := ""
 		maxContextLen := b.calcIssueContextMaxLen(repo.NameWithOwner, branchType, formattedID)
 		if maxContextLen > 0 {
@@ -43,17 +59,6 @@ func (b BranchProvider) GetBranchName(issue domain.Issue, repo domain.Repository
 		}
 
 		issueSlug = normalizeBranch(issueSlug)
-
-	} else {
-		// remap bug to bugfix
-		if issueType == issue_types.Bug {
-			branchType = b.getBugFixBranchType()
-			issueType = issue_types.Bugfix
-		}
-
-		if !issueType.Valid() || issueType == issue_types.Other || issueType == issue_types.Unknown {
-			return "", ErrUndeterminedIssueType
-		}
 	}
 
 	branchName = b.formatBranchName(repo.NameWithOwner, branchType, formattedID, issueSlug)
