@@ -6,6 +6,7 @@ import (
 	"github.com/InditexTech/gh-sherpa/cmd/common"
 	"github.com/InditexTech/gh-sherpa/internal/branches"
 	"github.com/InditexTech/gh-sherpa/internal/config"
+	"github.com/InditexTech/gh-sherpa/internal/domain/issue_types"
 	"github.com/InditexTech/gh-sherpa/internal/gh"
 	"github.com/InditexTech/gh-sherpa/internal/git"
 	"github.com/InditexTech/gh-sherpa/internal/interactive"
@@ -18,11 +19,13 @@ import (
 const cmdName = "create-pr"
 
 var Command = &cobra.Command{
-	Use:     cmdName,
-	Short:   "Create a pull request from the current local branch or issue type", // by creating and checkout a branch and pushing an empty commit",
-	Long:    "Create a pull request in draft mode from the current local branch or create one based on the type of GitHub or Jira issue, pushing all pending local commits or creating an empty one.",
-	RunE:    runCommand,
-	Example: "`gh sherpa " + cmdName + " --issue 1` for GH or `gh sherpa " + cmdName + " --issue PROJECTKEY-1` for Jira",
+	Use:   cmdName,
+	Short: "Create a pull request from the current local branch or issue type",
+	Long:  "Create a pull request in draft mode from the current local branch or create one based on the type of GitHub or Jira issue, pushing all pending local commits or creating an empty one.",
+	RunE:  runCommand,
+	Example: "`gh sherpa " + cmdName + " --issue 1` for GH or `gh sherpa " + cmdName + " --issue PROJECTKEY-1` for Jira\n" +
+		"`gh sherpa " + cmdName + " --issue 42 --type=bugfix` for non-interactive branch creation\n" +
+		"`gh sherpa " + cmdName + " --issue 42 --type=feature --skip-description` for non-interactive PR creation",
 	Aliases: []string{"cpr"},
 	PreRunE: preRunCommand,
 }
@@ -37,6 +40,8 @@ type createPullRequestFlags struct {
 	TemplatePath     string
 	ForkValue        bool
 	ForkNameValue    string
+	Type             string
+	SkipDescription  bool
 }
 
 var flags createPullRequestFlags
@@ -50,6 +55,8 @@ func init() {
 	Command.PersistentFlags().StringVar(&flags.TemplatePath, "template", "", "path to a pull request template file")
 	Command.PersistentFlags().BoolVar(&flags.ForkValue, "fork", false, "automatically set up fork for external contributors")
 	Command.PersistentFlags().StringVar(&flags.ForkNameValue, "fork-name", "", "specify custom fork organization/user (e.g. MyOrg/gh-sherpa)")
+	Command.PersistentFlags().StringVarP(&flags.Type, "type", "t", "", "specify the branch type (e.g., feature, bugfix, hotfix, chore, etc.)")
+	Command.PersistentFlags().BoolVar(&flags.SkipDescription, "skip-description", false, "skip the additional description prompt for the pull request")
 }
 
 func runCommand(cmd *cobra.Command, _ []string) error {
@@ -73,8 +80,10 @@ func runCommand(cmd *cobra.Command, _ []string) error {
 	isInteractive := !flags.UseDefaultValues
 
 	branchProviderCfg := branches.Configuration{
-		Branches:      cfg.Branches,
-		IsInteractive: isInteractive,
+		Branches:           cfg.Branches,
+		IsInteractive:      isInteractive,
+		BranchTypeOverride: flags.Type,
+		SkipDescription:    flags.SkipDescription,
 	}
 	branchProvider, err := branches.New(branchProviderCfg, userInteraction)
 	if err != nil {
@@ -97,6 +106,8 @@ func runCommand(cmd *cobra.Command, _ []string) error {
 		DraftPR:         !flags.NoDraft,
 		CloseIssue:      !flags.NoCloseIssue,
 		TemplatePath:    flags.TemplatePath,
+		BranchType:      flags.Type,
+		SkipDescription: flags.SkipDescription,
 	}
 	createPullRequestUseCase := use_cases.CreatePullRequest{
 		Cfg:                     createPullRequestConfig,
@@ -116,6 +127,19 @@ func preRunCommand(cmd *cobra.Command, _ []string) error {
 		logging.Debug("Flag no-fetch used found, marking issue flag as required...")
 		if err := cmd.MarkFlagRequired("issue"); err != nil {
 			return err
+		}
+	}
+
+	// Validate type flag if provided
+	if flags.Type != "" {
+		issueType := issue_types.ParseIssueType(flags.Type)
+		if issueType == issue_types.Unknown {
+			validTypes := issue_types.GetAllValues()
+			typeStrings := make([]string, len(validTypes))
+			for i, t := range validTypes {
+				typeStrings[i] = t.String()
+			}
+			return fmt.Errorf("invalid type '%s'. Valid types are: %v", flags.Type, typeStrings)
 		}
 	}
 

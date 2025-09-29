@@ -372,10 +372,77 @@ func TestNew(t *testing.T) {
 	t.Run("Creates a branch provider from configuration", func(t *testing.T) {
 		cfg := config.Configuration{}
 		userInteraction := new(domainMocks.MockUserInteractionProvider)
-		provider, err := NewFromConfiguration(cfg, userInteraction, false)
+		provider, err := NewFromConfiguration(cfg, userInteraction, false, "", false)
 		require.NoError(t, err)
 
 		assert.NotNil(t, provider)
 	})
 	//TODO: Add test cases when validation is implemented
+}
+
+func TestNonInteractiveBranchCreation(t *testing.T) {
+	t.Run("Should use branch type override when provided", func(t *testing.T) {
+		cfg := config.Configuration{}
+		userInteraction := new(domainMocks.MockUserInteractionProvider)
+
+		// Use type override with non-interactive mode
+		provider, err := NewFromConfiguration(cfg, userInteraction, false, "feature", false)
+		require.NoError(t, err)
+
+		// Create a bug issue, but we expect it to use "feature" prefix due to override
+		issue := domainFakes.NewFakeIssue("42", issue_types.Bug, domain.IssueTrackerTypeGithub)
+		issue.SetTitle("Fix Login Button")
+
+		repo := domain.Repository{
+			NameWithOwner:    "testuser/testrepo",
+			DefaultBranchRef: "main",
+		}
+
+		branchName, err := provider.GetBranchName(issue, repo)
+		require.NoError(t, err)
+
+		// Should use "feature" prefix instead of "bug" due to override
+		expected := "feature/GH-42-fix-login-button"
+		assert.Equal(t, expected, branchName)
+	})
+
+	t.Run("Should skip description prompt when flag is set", func(t *testing.T) {
+		cfg := config.Configuration{}
+		userInteraction := new(domainMocks.MockUserInteractionProvider)
+
+		// Interactive mode but with skip description flag
+		provider, err := NewFromConfiguration(cfg, userInteraction, true, "bugfix", true)
+		require.NoError(t, err)
+
+		// Mock should not expect any SelectOrInput calls for description
+		userInteraction.AssertNotCalled(t, "SelectOrInput")
+
+		issue := domainFakes.NewFakeIssue("42", issue_types.Bug, domain.IssueTrackerTypeGithub)
+		issue.SetTitle("Fix Login Button")
+
+		repo := domain.Repository{
+			NameWithOwner:    "testuser/testrepo",
+			DefaultBranchRef: "main",
+		}
+
+		branchName, err := provider.GetBranchName(issue, repo)
+		require.NoError(t, err)
+
+		// Should use bugfix prefix and format issue title
+		expected := "bugfix/GH-42-fix-login-button"
+		assert.Equal(t, expected, branchName)
+	})
+
+	t.Run("Should validate type flags", func(t *testing.T) {
+		// Test that valid types work
+		validTypes := []string{"feature", "bugfix", "hotfix", "chore", "documentation"}
+		for _, validType := range validTypes {
+			cfg := config.Configuration{}
+			userInteraction := new(domainMocks.MockUserInteractionProvider)
+
+			provider, err := NewFromConfiguration(cfg, userInteraction, false, validType, false)
+			require.NoError(t, err, "Type %s should be valid", validType)
+			assert.NotNil(t, provider)
+		}
+	})
 }

@@ -18,13 +18,17 @@ type BranchProvider struct {
 
 type Configuration struct {
 	config.Branches
-	IsInteractive bool
+	IsInteractive      bool
+	BranchTypeOverride string
+	SkipDescription    bool
 }
 
-func NewFromConfiguration(globalConfig config.Configuration, userInteractionProvider domain.UserInteractionProvider, isInteractive bool) (*BranchProvider, error) {
+func NewFromConfiguration(globalConfig config.Configuration, userInteractionProvider domain.UserInteractionProvider, isInteractive bool, branchTypeOverride string, skipDescription bool) (*BranchProvider, error) {
 	return New(Configuration{
-		Branches:      globalConfig.Branches,
-		IsInteractive: isInteractive,
+		Branches:           globalConfig.Branches,
+		IsInteractive:      isInteractive,
+		BranchTypeOverride: branchTypeOverride,
+		SkipDescription:    skipDescription,
 	}, userInteractionProvider)
 }
 
